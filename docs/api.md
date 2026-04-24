@@ -528,25 +528,26 @@ List all available classes/lessons in a date range for a given location. Returns
 
 **Key response fields per item:**
 
-| Field                     | Type      | Description                                                                    |
-| ------------------------- | --------- | ------------------------------------------------------------------------------ |
-| `id`                      | int       | Schedule slot ID — use this in `scheduleUser/insert` and `scheduleUser/delete` |
-| `date`                    | string    | Class date `YYYY-MM-DD`                                                        |
-| `time`                    | string    | Start time `HH:MM`                                                             |
-| `end_time`                | string    | End time `HH:MM`                                                               |
-| `max_users`               | int       | Maximum capacity                                                               |
-| `free`                    | int       | Available spots                                                                |
-| `registered`              | int       | Currently booked count                                                         |
-| `stand_by`                | int       | Standby list count                                                             |
-| `status`                  | string    | `"active"` = bookable                                                          |
-| `past`                    | int       | `1` if class is in the past                                                    |
-| `user_booked`             | int\|null | `null` if not booked by current user; schedule_user record ID if booked        |
-| `user_in_standby`         | int\|null | Standby record ID if on waitlist                                               |
-| `booking_option`          | string    | `"insertScheduleUser"` = use `scheduleUser/insert` to book                     |
-| `box_categories.name`     | string    | Class type name (e.g. `"HIIT"`, `"Booty Workout"`)                             |
-| `coach.full_name`         | string    | Coach's display name                                                           |
-| `series`                  | object    | Recurring series this class belongs to                                         |
-| `series.membership_types` | array     | Membership plans that can be used to book this class                           |
+| Field                     | Type      | Description                                                                                                                                                                      |
+| ------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | int       | Schedule slot ID — use this in `scheduleUser/insert` and `scheduleUser/delete`                                                                                                   |
+| `date`                    | string    | Class date `YYYY-MM-DD`                                                                                                                                                          |
+| `time`                    | string    | Start time `HH:MM`                                                                                                                                                               |
+| `end_time`                | string    | End time `HH:MM`                                                                                                                                                                 |
+| `max_users`               | int       | Maximum capacity                                                                                                                                                                 |
+| `free`                    | int       | Available spots                                                                                                                                                                  |
+| `registered`              | int       | Currently booked count                                                                                                                                                           |
+| `stand_by`                | int       | Standby list count                                                                                                                                                               |
+| `has_spots`               | int       | **Not a reliable availability flag** — can be `0` even when `free > 0` (e.g. current user's membership type doesn't cover this class). Use `free` to check availability instead. |
+| `status`                  | string    | `"active"` = bookable                                                                                                                                                            |
+| `past`                    | int       | `1` if class is in the past                                                                                                                                                      |
+| `user_booked`             | int\|null | `null` if not booked by current user; schedule_user record ID if booked                                                                                                          |
+| `user_in_standby`         | int\|null | Standby record ID if on waitlist                                                                                                                                                 |
+| `booking_option`          | string    | `"insertScheduleUser"` = use `scheduleUser/insert` to book                                                                                                                       |
+| `box_categories.name`     | string    | Class type name (e.g. `"HIIT"`, `"Booty Workout"`)                                                                                                                               |
+| `coach.full_name`         | string    | Coach's display name                                                                                                                                                             |
+| `series`                  | object    | Recurring series this class belongs to                                                                                                                                           |
+| `series.membership_types` | array     | Membership plans that can be used to book this class                                                                                                                             |
 
 **Notes:**
 
@@ -554,6 +555,7 @@ List all available classes/lessons in a date range for a given location. Returns
 - The date range can span multiple days or weeks
 - `user_booked` is `null` for unbooked classes and a record ID if the authenticated user has booked
 - `booking_option: "insertScheduleUser"` indicates the class is bookable via `POST /api/v2/scheduleUser/insert`
+- **Do not use `has_spots` as a boolean to check availability.** It reflects eligibility for the current user (e.g. membership coverage), not raw spot count. Use `free > 0` or `max_users - registered > 0` instead.
 
 ---
 
@@ -649,6 +651,48 @@ Leave the waiting list for a class.
 
 - Only valid if the user is currently on the standby list for that schedule slot
 - Returns 500 if the user has no standby record for the given `schedule_id`
+
+---
+
+### POST /api/v2/scheduleUser/insert (standby confirmation)
+
+Confirm a standby spot that has opened up. When a cancellation creates a vacancy, Arbox notifies the first standby user by email/push notification and creates an **availability record**. The user has 30 minutes to confirm before the offer expires and moves to the next standby user.
+
+**Confirmation is done via the same `scheduleUser/insert` endpoint, but with the additional `availability_id` field:**
+
+```json
+{
+  "schedule_id": 75223992,
+  "membership_user_id": 14285177,
+  "availability_id": 98765
+}
+```
+
+| Field                | Type | Description                                                               |
+| -------------------- | ---- | ------------------------------------------------------------------------- |
+| `schedule_id`        | int  | Schedule slot ID                                                          |
+| `membership_user_id` | int  | User's active membership record ID                                        |
+| `availability_id`    | int  | The availability record ID from the schedule item or notification payload |
+
+**How to obtain `availability_id`:**
+
+- When a standby spot opens for the authenticated user, the `schedule/betweenDates` response will show `availability_id` as a non-null integer on that specific schedule item (it is `null` for all other classes)
+- The push notification / email link also carries this ID
+
+**Flow:**
+
+1. User joins standby via `scheduleStandBy/insert`
+2. A cancellation occurs, freeing a spot
+3. Arbox sets `availability_id` on the schedule item and sends a push/email notification
+4. User polls `schedule/betweenDates` or receives a push notification to get the `availability_id`
+5. User calls `scheduleUser/insert` with `availability_id` within 30 minutes
+6. If 30 minutes elapse without confirmation, the `availability_id` expires and the next standby user is notified
+
+**Error responses:**
+
+| Code                | Meaning                                                                |
+| ------------------- | ---------------------------------------------------------------------- |
+| 403 `Unknown issue` | `availability_id` is invalid, expired, or does not belong to this user |
 
 ---
 
