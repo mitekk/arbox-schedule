@@ -394,6 +394,169 @@ Returns all boxes the user belongs to, with full location details and feature fl
 
 ---
 
+### POST /api/v2/schedule/betweenDates
+
+List all available classes/lessons in a date range for a given location. Returns full class detail including spots, coach, category, and whether the authenticated user has booked.
+
+**Request body:**
+
+```json
+{
+  "from": "2026-04-25T00:00:00.000Z",
+  "to": "2026-05-02T00:00:00.000Z",
+  "locations_box_id": 21372,
+  "boxes_id": 23733
+}
+```
+
+| Field              | Type   | Description                                        |
+| ------------------ | ------ | -------------------------------------------------- |
+| `from`             | string | Start of range — ISO 8601 datetime with `Z` suffix |
+| `to`               | string | End of range — ISO 8601 datetime with `Z` suffix   |
+| `locations_box_id` | int    | Location ID (from `activeLocationsBox`)            |
+| `boxes_id`         | int    | Box ID (from `activeBoxes`)                        |
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "id": 75223992,
+      "time": "08:10",
+      "end_time": "09:00",
+      "date": "2026-04-26",
+      "date_time": {
+        "date": "2026-04-26 08:10:00",
+        "timezone": "Asia/Jerusalem"
+      },
+      "end_date_time": {
+        "date": "2026-04-26 09:00:00",
+        "timezone": "Asia/Jerusalem"
+      },
+      "day_of_week": 0,
+      "coach_fk": 556108,
+      "second_coach_fk": null,
+      "box_category_fk": 155160,
+      "locations_box_fk": 21372,
+      "box_fk": 23733,
+      "series_fk": 562437,
+      "max_users": 18,
+      "free": 2,
+      "registered": 16,
+      "stand_by": 0,
+      "status": "active",
+      "past": 0,
+      "has_spots": 0,
+      "live_link": null,
+      "spaces_id": null,
+      "workout_id": null,
+      "late_cancellation": null,
+      "disable_cancellation_time": 3,
+      "enable_late_cancellation": 1,
+      "enable_registration_time": 0,
+      "user_booked": null,
+      "user_in_standby": null,
+      "stand_by_position": null,
+      "booking_option": "insertScheduleUser",
+      "is_swappable_schedule": false,
+      "reschedule": false,
+      "box": {
+        "id": 23733,
+        "name": "power house - by limor",
+        "has_regular_clients": 0,
+        "cloudinary_image": "https://res.cloudinary.com/arbox/...",
+        "phone": "+972549259926"
+      },
+      "box_categories": {
+        "id": 155160,
+        "name": "אימון מחזורי",
+        "bio": null,
+        "category_color": "#FBD0E8",
+        "length": 50,
+        "price": null,
+        "type": 1,
+        "color_name": "cat-color-8",
+        "category_type": { "id": 1, "name": "class" }
+      },
+      "coach": {
+        "id": 556108,
+        "first_name": "לימור",
+        "last_name": "ממון",
+        "full_name": "לימור ממון",
+        "image": "",
+        "cloudinary_image": "",
+        "bio": null,
+        "is_user": true
+      },
+      "second_coach": null,
+      "series": {
+        "id": 562437,
+        "series_name": "אימון מחזורי,ראשון,08:10",
+        "start_date": "2025-11-12",
+        "end_date": null,
+        "start_time": "08:10:00",
+        "end_time": "09:00:00",
+        "status": "active",
+        "day": "day-1",
+        "max_users": 18,
+        "coach_fk": 556108,
+        "membership_types": [
+          {
+            "id": 383509,
+            "name": "אימון מחזורי",
+            "type": "trial",
+            "price": 35,
+            "show_in_app": 1
+          }
+        ]
+      },
+      "booked_users": [
+        /* array of booked user objects */
+      ],
+      "schedule_user": [
+        /* same as booked_users */
+      ],
+      "schedule_stand_by": [],
+      "custom_field_value": [],
+      "disable_pages_app": [],
+      "spaces": null
+    }
+  ]
+}
+```
+
+**Key response fields per item:**
+
+| Field                     | Type      | Description                                                                    |
+| ------------------------- | --------- | ------------------------------------------------------------------------------ |
+| `id`                      | int       | Schedule slot ID — use this in `scheduleUser/insert` and `scheduleUser/delete` |
+| `date`                    | string    | Class date `YYYY-MM-DD`                                                        |
+| `time`                    | string    | Start time `HH:MM`                                                             |
+| `end_time`                | string    | End time `HH:MM`                                                               |
+| `max_users`               | int       | Maximum capacity                                                               |
+| `free`                    | int       | Available spots                                                                |
+| `registered`              | int       | Currently booked count                                                         |
+| `stand_by`                | int       | Standby list count                                                             |
+| `status`                  | string    | `"active"` = bookable                                                          |
+| `past`                    | int       | `1` if class is in the past                                                    |
+| `user_booked`             | int\|null | `null` if not booked by current user; schedule_user record ID if booked        |
+| `user_in_standby`         | int\|null | Standby record ID if on waitlist                                               |
+| `booking_option`          | string    | `"insertScheduleUser"` = use `scheduleUser/insert` to book                     |
+| `box_categories.name`     | string    | Class type name (e.g. `"HIIT"`, `"Booty Workout"`)                             |
+| `coach.full_name`         | string    | Coach's display name                                                           |
+| `series`                  | object    | Recurring series this class belongs to                                         |
+| `series.membership_types` | array     | Membership plans that can be used to book this class                           |
+
+**Notes:**
+
+- `from`/`to` must be in ISO 8601 format with milliseconds and `Z` suffix
+- The date range can span multiple days or weeks
+- `user_booked` is `null` for unbooked classes and a record ID if the authenticated user has booked
+- `booking_option: "insertScheduleUser"` indicates the class is bookable via `POST /api/v2/scheduleUser/insert`
+
+---
+
 ### POST /api/v2/scheduleUser/insert
 
 Register the authenticated user for a class (schedule slot).
@@ -402,23 +565,19 @@ Register the authenticated user for a class (schedule slot).
 
 ```json
 {
-  "scheduleFk": 12345,
-  "locationsBoxFk": 21372,
-  "boxFk": 23733,
-  "usersFk": 647542
+  "schedule_id": 75223992,
+  "membership_user_id": 14285177
 }
 ```
 
-| Field            | Type | Description                             |
-| ---------------- | ---- | --------------------------------------- |
-| `scheduleFk`     | int  | ID of the schedule slot to book         |
-| `locationsBoxFk` | int  | Location ID (from `activeLocationsBox`) |
-| `boxFk`          | int  | Box ID (from `activeBoxes`)             |
-| `usersFk`        | int  | User ID (from profile `id`)             |
+| Field                | Type | Description                                                                                  |
+| -------------------- | ---- | -------------------------------------------------------------------------------------------- |
+| `schedule_id`        | int  | ID of the schedule slot (from `schedule/betweenDates` response `id` field)                   |
+| `membership_user_id` | int  | User's active membership record ID (from `users_boxes[].schedule_user[].membership_user_fk`) |
 
 **Notes:**
 
-- Use schedule IDs obtained from `GET /api/v2/schedule/betweenDates` (requires box admin credentials) or from the Arbox mobile app
+- Obtain `schedule_id` from `POST /api/v2/schedule/betweenDates`
 - Returns an error if the class is full
 
 ---
@@ -436,6 +595,60 @@ Cancel a class booking.
   "boxFk": 23733
 }
 ```
+
+---
+
+### POST /api/v2/scheduleStandBy/insert
+
+Join the waiting list for a fully-booked class.
+
+**Request body:** (same shape as `scheduleUser/insert`)
+
+```json
+{
+  "schedule_id": 75223992,
+  "membership_user_id": 14285177
+}
+```
+
+| Field                | Type | Description                                                |
+| -------------------- | ---- | ---------------------------------------------------------- |
+| `schedule_id`        | int  | Schedule slot ID (from `schedule/betweenDates` `id` field) |
+| `membership_user_id` | int  | User's active membership record ID                         |
+
+**Response (success):** HTTP 200 with standby record
+
+**Error responses:**
+
+| Code | Name                | Meaning                                                     |
+| ---- | ------------------- | ----------------------------------------------------------- |
+| 425  | `alreadyRegistered` | Already booked (or on standby) for a class at that timeslot |
+
+**Notes:**
+
+- Only call this when `free == 0` on the schedule item; if spots are available, use `scheduleUser/insert` instead
+- After joining, `user_in_standby` will be non-null and `stand_by_position` will reflect queue position in the `schedule/betweenDates` response
+- `schedule_stand_by` array on the schedule item lists all users currently on the waitlist
+
+---
+
+### POST /api/v2/scheduleStandBy/delete
+
+Leave the waiting list for a class.
+
+**Request body:** (same shape as `scheduleUser/insert`)
+
+```json
+{
+  "schedule_id": 75223992,
+  "membership_user_id": 14285177
+}
+```
+
+**Notes:**
+
+- Only valid if the user is currently on the standby list for that schedule slot
+- Returns 500 if the user has no standby record for the given `schedule_id`
 
 ---
 
