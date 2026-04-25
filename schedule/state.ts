@@ -5,6 +5,9 @@ export interface StandbyEntry {
   scheduleId: number;
   seriesId: number;
   date: string; // YYYY-MM-DD
+  className?: string;
+  time?: string;
+  endTime?: string;
 }
 
 export interface AppState {

@@ -8,8 +8,43 @@ export interface LessonOutcome {
   coachName: string;
   date: string;
   time: string;
+  endTime?: string;
   status: LessonStatus;
   standbyPosition?: number;
+}
+
+interface IcsEvent {
+  scheduleId: number;
+  date: string;
+  time: string;
+  endTime: string;
+  summary: string;
+}
+
+function generateIcs(events: IcsEvent[]): string {
+  const stamp =
+    new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
+  const vevents = events.map((e) => {
+    const dtStart = `${e.date.replace(/-/g, "")}T${e.time.replace(":", "")}00`;
+    const dtEnd = `${e.date.replace(/-/g, "")}T${e.endTime.replace(":", "")}00`;
+    return [
+      "BEGIN:VEVENT",
+      `UID:${e.scheduleId}@arbox-scheduler`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=Asia/Jerusalem:${dtStart}`,
+      `DTEND;TZID=Asia/Jerusalem:${dtEnd}`,
+      `SUMMARY:${e.summary}`,
+      "END:VEVENT",
+    ].join("\r\n");
+  });
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Arbox Scheduler//EN",
+    "CALSCALE:GREGORIAN",
+    ...vevents,
+    "END:VCALENDAR",
+  ].join("\r\n");
 }
 
 export interface Notifier {
@@ -31,7 +66,11 @@ function formatDate(isoDate: string): string {
 export function createNotifier(apiKey: string, toEmail: string): Notifier {
   const resend = new Resend(apiKey);
 
-  async function send(subject: string, text: string): Promise<void> {
+  async function send(
+    subject: string,
+    text: string,
+    ics?: string
+  ): Promise<void> {
     await resend.emails.send({
       // onboarding@resend.dev works for Resend test mode (sends to verified account email only).
       // Replace with your own domain sender once verified in Resend dashboard.
@@ -39,6 +78,9 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
       to: toEmail,
       subject,
       text,
+      ...(ics && {
+        attachments: [{ filename: "lessons.ics", content: Buffer.from(ics) }],
+      }),
     });
   }
 
@@ -55,13 +97,38 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
         }
       });
       const subject = `Arbox booking — ${outcomes.length} of 2 lessons scheduled`;
-      return send(subject, lines.join("\n\n"));
+      const bookedEvents: IcsEvent[] = outcomes
+        .filter((o) => o.status === "booked" && o.endTime)
+        .map((o) => ({
+          scheduleId: 0,
+          date: o.date,
+          time: o.time,
+          endTime: o.endTime!,
+          summary: `${o.className} with ${o.coachName}`,
+        }));
+      const ics =
+        bookedEvents.length > 0 ? generateIcs(bookedEvents) : undefined;
+      return send(subject, lines.join("\n\n"), ics);
     },
-    sendConfirmedEmail: (entry) =>
-      send(
+    sendConfirmedEmail: (entry) => {
+      const ics =
+        entry.className && entry.time && entry.endTime
+          ? generateIcs([
+              {
+                scheduleId: entry.scheduleId,
+                date: entry.date,
+                time: entry.time,
+                endTime: entry.endTime,
+                summary: entry.className,
+              },
+            ])
+          : undefined;
+      return send(
         "✅ Standby confirmed",
-        `Confirmed standby spot for series ${entry.seriesId} on ${entry.date}.`
-      ),
+        `Confirmed standby spot for series ${entry.seriesId} on ${entry.date}.`,
+        ics
+      );
+    },
     sendStandbyLostEmail: (entry) =>
       send(
         "❌ Standby slot lost",

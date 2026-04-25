@@ -113,6 +113,9 @@ describe("runBookingJob", () => {
       scheduleId: 1002,
       seriesId: 202,
       date: "2026-05-06",
+      className: "CrossFit",
+      time: "08:00",
+      endTime: "08:00",
     });
 
     const [outcomes] = vi.mocked(notifier.sendBookingSessionSummary).mock
