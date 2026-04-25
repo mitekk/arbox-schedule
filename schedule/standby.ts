@@ -3,6 +3,7 @@ import { getSchedule, bookClass } from "../api/requests/schedule";
 import { loadState, saveState, removeStandbyEntry } from "./state";
 import type { Config } from "./config";
 import type { Notifier } from "./notify";
+import { toLocalDate } from "./utils";
 
 export async function runStandbyJob(
   config: Config,
@@ -16,8 +17,7 @@ export async function runStandbyJob(
   } = await login({ email: config.email, password: config.password });
 
   try {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const today = toLocalDate(new Date());
     let stateChanged = false;
 
     for (const entry of [...state.standby]) {
@@ -25,7 +25,11 @@ export async function runStandbyJob(
       if (entry.date < today) {
         removeStandbyEntry(state, entry.scheduleId);
         stateChanged = true;
-        await notifier.sendExpiredEmail(entry);
+        try {
+          await notifier.sendExpiredEmail(entry);
+        } catch (err) {
+          console.error("[standby] Failed to send email notification:", err);
+        }
         console.log(
           `[standby] Expired entry for series ${entry.seriesId} on ${entry.date}`
         );
@@ -53,7 +57,11 @@ export async function runStandbyJob(
           });
           removeStandbyEntry(state, entry.scheduleId);
           stateChanged = true;
-          await notifier.sendConfirmedEmail(entry);
+          try {
+            await notifier.sendConfirmedEmail(entry);
+          } catch (err) {
+            console.error("[standby] Failed to send email notification:", err);
+          }
           console.log(
             `[standby] Confirmed standby for series ${entry.seriesId} on ${entry.date}`
           );
@@ -71,7 +79,11 @@ export async function runStandbyJob(
       if (item.user_in_standby == null && item.user_booked == null) {
         removeStandbyEntry(state, entry.scheduleId);
         stateChanged = true;
-        await notifier.sendStandbyLostEmail(entry);
+        try {
+          await notifier.sendStandbyLostEmail(entry);
+        } catch (err) {
+          console.error("[standby] Failed to send email notification:", err);
+        }
         console.log(
           `[standby] Lost standby for series ${entry.seriesId} on ${entry.date}`
         );

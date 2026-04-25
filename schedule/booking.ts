@@ -3,13 +3,7 @@ import { getSchedule, bookClass, joinStandBy } from "../api/requests/schedule";
 import { addStandbyEntry } from "./state";
 import type { Config } from "./config";
 import type { Notifier } from "./notify";
-
-function toLocalDate(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
+import { toLocalDate } from "./utils";
 
 export async function runBookingJob(
   config: Config,
@@ -61,11 +55,15 @@ export async function runBookingJob(
           schedule_id: item.id,
           membership_user_id: config.membershipId,
         });
-        await notifier.sendBookedEmail({
-          seriesId,
-          date: item.date,
-          time: item.time,
-        });
+        try {
+          await notifier.sendBookedEmail({
+            seriesId,
+            date: item.date,
+            time: item.time,
+          });
+        } catch (err) {
+          console.error("[booking] Failed to send email notification:", err);
+        }
         console.log(
           `[booking] Booked series ${seriesId} on ${item.date} at ${item.time}`
         );
@@ -75,12 +73,16 @@ export async function runBookingJob(
           membership_user_id: config.membershipId,
         });
         addStandbyEntry({ scheduleId: item.id, seriesId, date: item.date });
-        await notifier.sendStandbyEmail({
-          seriesId,
-          date: item.date,
-          time: item.time,
-          position: item.stand_by + 1,
-        });
+        try {
+          await notifier.sendStandbyEmail({
+            seriesId,
+            date: item.date,
+            time: item.time,
+            position: item.stand_by + 1,
+          });
+        } catch (err) {
+          console.error("[booking] Failed to send email notification:", err);
+        }
         console.log(
           `[booking] Joined standby for series ${seriesId} on ${item.date} (position ${item.stand_by + 1})`
         );
@@ -90,7 +92,11 @@ export async function runBookingJob(
     }
 
     if (slotsFilled < 2) {
-      await notifier.sendFailureEmail({ slotsFilled, unfilled });
+      try {
+        await notifier.sendFailureEmail({ slotsFilled, unfilled });
+      } catch (err) {
+        console.error("[booking] Failed to send email notification:", err);
+      }
       console.log(
         `[booking] Only ${slotsFilled}/2 slots filled. Unfilled series: ${unfilled.join(", ")}`
       );
