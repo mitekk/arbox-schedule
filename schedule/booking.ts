@@ -2,8 +2,12 @@ import { login, logout } from "../api/requests/auth";
 import { getSchedule, bookClass, joinStandBy } from "../api/requests/schedule";
 import { addStandbyEntry } from "./state";
 import type { Config } from "./config";
-import type { Notifier } from "./notify";
+import type { Notifier, LessonOutcome } from "./notify";
 import { toLocalDate } from "./utils";
+
+function toISODateZ(d: Date): string {
+  return toLocalDate(d) + "T00:00:00.000Z";
+}
 
 export async function runBookingJob(
   config: Config,
@@ -24,8 +28,8 @@ export async function runBookingJob(
     nextSaturday.setDate(nextSunday.getDate() + 6);
     nextSaturday.setHours(23, 59, 59, 0);
 
-    const from = toLocalDate(nextSunday);
-    const to = toLocalDate(nextSaturday);
+    const from = toISODateZ(nextSunday);
+    const to = toISODateZ(nextSaturday);
 
     const { data: items } = await getSchedule(token, {
       from,
@@ -39,14 +43,16 @@ export async function runBookingJob(
       ...config.secondarySeriesIds,
     ];
     let slotsFilled = 0;
-    const unfilled: number[] = [];
+    const outcomes: LessonOutcome[] = [];
 
     for (const seriesId of priorityList) {
       if (slotsFilled >= 2) break;
 
       const item = items.find((i) => i.series_fk === seriesId);
-      if (!item) {
-        unfilled.push(seriesId);
+      if (!item) continue;
+
+      if (item.user_booked !== null || item.user_in_standby !== null) {
+        slotsFilled++;
         continue;
       }
 
@@ -55,17 +61,15 @@ export async function runBookingJob(
           schedule_id: item.id,
           membership_user_id: config.membershipId,
         });
-        try {
-          await notifier.sendBookedEmail({
-            seriesId,
-            date: item.date,
-            time: item.time,
-          });
-        } catch (err) {
-          console.error("[booking] Failed to send email notification:", err);
-        }
+        outcomes.push({
+          className: item.box_categories.name,
+          coachName: item.coach.full_name,
+          date: item.date,
+          time: item.time,
+          status: "booked",
+        });
         console.log(
-          `[booking] Booked series ${seriesId} on ${item.date} at ${item.time}`
+          `[booking] Booked ${item.box_categories.name} on ${item.date} at ${item.time}`
         );
       } else {
         await joinStandBy(token, {
@@ -73,33 +77,30 @@ export async function runBookingJob(
           membership_user_id: config.membershipId,
         });
         addStandbyEntry({ scheduleId: item.id, seriesId, date: item.date });
-        try {
-          await notifier.sendStandbyEmail({
-            seriesId,
-            date: item.date,
-            time: item.time,
-            position: item.stand_by + 1,
-          });
-        } catch (err) {
-          console.error("[booking] Failed to send email notification:", err);
-        }
+        outcomes.push({
+          className: item.box_categories.name,
+          coachName: item.coach.full_name,
+          date: item.date,
+          time: item.time,
+          status: "standby",
+          standbyPosition: item.stand_by + 1,
+        });
         console.log(
-          `[booking] Joined standby for series ${seriesId} on ${item.date} (position ${item.stand_by + 1})`
+          `[booking] Joined standby for ${item.box_categories.name} on ${item.date} (position ${item.stand_by + 1})`
         );
       }
 
       slotsFilled++;
     }
 
+    try {
+      await notifier.sendBookingSessionSummary(outcomes);
+    } catch (err) {
+      console.error("[booking] Failed to send email notification:", err);
+    }
+
     if (slotsFilled < 2) {
-      try {
-        await notifier.sendFailureEmail({ slotsFilled, unfilled });
-      } catch (err) {
-        console.error("[booking] Failed to send email notification:", err);
-      }
-      console.log(
-        `[booking] Only ${slotsFilled}/2 slots filled. Unfilled series: ${unfilled.join(", ")}`
-      );
+      console.log(`[booking] Only ${slotsFilled}/2 slots filled.`);
     }
   } finally {
     await logout(token);

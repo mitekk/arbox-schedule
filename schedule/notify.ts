@@ -1,31 +1,31 @@
 import { Resend } from "resend";
 import type { StandbyEntry } from "./state";
 
-export interface BookedInfo {
-  seriesId: number;
+export type LessonStatus = "booked" | "standby" | "failed";
+
+export interface LessonOutcome {
+  className: string;
+  coachName: string;
   date: string;
   time: string;
-}
-
-export interface StandbyInfo {
-  seriesId: number;
-  date: string;
-  time: string;
-  position: number;
-}
-
-export interface FailureInfo {
-  slotsFilled: number;
-  unfilled: number[];
+  status: LessonStatus;
+  standbyPosition?: number;
 }
 
 export interface Notifier {
-  sendBookedEmail: (info: BookedInfo) => Promise<void>;
-  sendStandbyEmail: (info: StandbyInfo) => Promise<void>;
+  sendBookingSessionSummary: (outcomes: LessonOutcome[]) => Promise<void>;
   sendConfirmedEmail: (entry: StandbyEntry) => Promise<void>;
   sendStandbyLostEmail: (entry: StandbyEntry) => Promise<void>;
   sendExpiredEmail: (entry: StandbyEntry) => Promise<void>;
-  sendFailureEmail: (info: FailureInfo) => Promise<void>;
+}
+
+function formatDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("he-IL", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 export function createNotifier(apiKey: string, toEmail: string): Notifier {
@@ -43,16 +43,20 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
   }
 
   return {
-    sendBookedEmail: (info) =>
-      send(
-        "✅ Lesson booked",
-        `Booked class for series ${info.seriesId} on ${info.date} at ${info.time}.`
-      ),
-    sendStandbyEmail: (info) =>
-      send(
-        "⏳ On standby",
-        `Joined standby for series ${info.seriesId} on ${info.date} at ${info.time} (position ${info.position}).`
-      ),
+    sendBookingSessionSummary: (outcomes) => {
+      const lines = outcomes.map((o) => {
+        const date = formatDate(o.date);
+        if (o.status === "booked") {
+          return `✅ ${o.className} — ${date} ב-${o.time}\n   מאמן: ${o.coachName}`;
+        } else if (o.status === "standby") {
+          return `⏳ ${o.className} — ${date} ב-${o.time}\n   Standby position: #${o.standbyPosition}\n   מאמן: ${o.coachName}`;
+        } else {
+          return `❌ ${o.className} — ${date} ב-${o.time} (failed)\n   מאמן: ${o.coachName}`;
+        }
+      });
+      const subject = `Arbox booking — ${outcomes.length} of 2 lessons scheduled`;
+      return send(subject, lines.join("\n\n"));
+    },
     sendConfirmedEmail: (entry) =>
       send(
         "✅ Standby confirmed",
@@ -67,11 +71,6 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
       send(
         "ℹ️ Standby expired",
         `Standby entry for series ${entry.seriesId} on ${entry.date} has passed without confirmation.`
-      ),
-    sendFailureEmail: (info) =>
-      send(
-        "❌ Booking incomplete",
-        `Only ${info.slotsFilled}/2 slots could be filled this week.\nNo class found for series: ${info.unfilled.join(", ")}.`
       ),
   };
 }
