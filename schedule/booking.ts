@@ -66,6 +66,7 @@ export async function runBookingJob(
           coachName: item.coach.full_name,
           date: item.date,
           time: item.time,
+          endTime: item.end_time,
           status: "booked",
         });
         console.log(
@@ -76,12 +77,20 @@ export async function runBookingJob(
           schedule_id: item.id,
           membership_user_id: config.membershipId,
         });
-        addStandbyEntry({ scheduleId: item.id, seriesId, date: item.date });
+        addStandbyEntry({
+          scheduleId: item.id,
+          seriesId,
+          date: item.date,
+          className: item.box_categories.name,
+          time: item.time,
+          endTime: item.end_time,
+        });
         outcomes.push({
           className: item.box_categories.name,
           coachName: item.coach.full_name,
           date: item.date,
           time: item.time,
+          endTime: item.end_time,
           status: "standby",
           standbyPosition: item.stand_by + 1,
         });
