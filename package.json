@@ -6,6 +6,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "test": "vitest run",
     "start": "ts-node schedule/scheduler.ts",
     "prepare": "husky"
   },
@@ -17,11 +18,13 @@
   "devDependencies": {
     "@types/node": "^20.19.39",
     "@types/node-cron": "^3.0.11",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^10.2.1",
     "husky": "^9.1.7",
     "prettier": "^3.8.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.0",
-    "typescript-eslint": "^8.59.0"
+    "typescript-eslint": "^8.59.0",
+    "vitest": "^4.1.5"
   }
 }

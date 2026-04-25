@@ -9,5 +9,5 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["api/**/*", "schedule/**/*", "scripts/**/*"]
+  "include": ["api/**/*", "schedule/**/*", "scripts/**/*", "tests/**/*"]
 }
