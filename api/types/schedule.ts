@@ -1,6 +1,7 @@
 export interface BookClassRequest {
   schedule_id: number;
   membership_user_id: number;
+  availability_id?: number;
 }
 
 export interface CancelClassRequest {
@@ -103,6 +104,7 @@ export interface ScheduleItem {
   user_in_standby: number | null;
   stand_by_position: number | null;
   booking_option: string;
+  availability_id: number | null;
   is_swappable_schedule: boolean;
   reschedule: boolean;
   box: {

@@ -5,8 +5,9 @@
     "lib": ["ES2022", "dom"],
     "strict": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["api/**/*"]
+  "include": ["api/**/*", "schedule/**/*", "scripts/**/*"]
 }
