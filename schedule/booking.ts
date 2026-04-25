@@ -4,6 +4,13 @@ import { addStandbyEntry } from "./state";
 import type { Config } from "./config";
 import type { Notifier } from "./notify";
 
+function toLocalDate(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export async function runBookingJob(
   config: Config,
   notifier: Notifier
@@ -23,8 +30,8 @@ export async function runBookingJob(
     nextSaturday.setDate(nextSunday.getDate() + 6);
     nextSaturday.setHours(23, 59, 59, 0);
 
-    const from = nextSunday.toISOString().split("T")[0];
-    const to = nextSaturday.toISOString().split("T")[0];
+    const from = toLocalDate(nextSunday);
+    const to = toLocalDate(nextSaturday);
 
     const { data: items } = await getSchedule(token, {
       from,
