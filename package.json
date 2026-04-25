@@ -6,16 +6,21 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "start": "ts-node schedule/scheduler.ts",
     "prepare": "husky"
   },
   "dependencies": {
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "node-cron": "^4.2.1",
+    "resend": "^6.12.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
     "eslint": "^10.2.1",
     "husky": "^9.1.7",
     "prettier": "^3.8.3",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.59.0"
   }
