@@ -11,7 +11,8 @@ export interface AppState {
   standby: StandbyEntry[];
 }
 
-const STATE_PATH = resolve(process.cwd(), "state.json");
+const STATE_PATH =
+  process.env.STATE_FILE ?? resolve(process.cwd(), "state.json");
 
 export function loadState(): AppState {
   if (!existsSync(STATE_PATH)) return { standby: [] };
