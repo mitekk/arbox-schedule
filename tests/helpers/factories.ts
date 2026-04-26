@@ -103,6 +103,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     secondarySeriesIds: [202],
     resendApiKey: "re_test_key",
     notificationEmail: "notify@example.com",
+    port: 3000,
     ...overrides,
   };
 }
