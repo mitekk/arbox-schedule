@@ -1,8 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { login, logout } from "../api/requests/auth";
 import { cancelClass } from "../api/requests/schedule";
 import type { Config } from "./config";
+import { runStandbyJob, isStandbyRunning } from "./standby";
+import type { Notifier } from "./notify";
 
 interface CancelPayload {
   scheduleId: number;
@@ -66,9 +68,26 @@ export function verifyCancelToken(
   return payload;
 }
 
-export function startCancelServer(config: Config): void {
-  createServer(async (req, res) => {
+export function startServer(config: Config, notifier: Notifier): Server {
+  return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+
+    if (url.pathname === "/standby/run" && req.method === "POST") {
+      if (isStandbyRunning()) {
+        res
+          .writeHead(409, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ status: "already-running" }));
+        return;
+      }
+      runStandbyJob(config, notifier).catch((err) =>
+        console.error("[standby] Manual trigger failed:", err)
+      );
+      res
+        .writeHead(202, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ status: "started" }));
+      console.log("[standby] Manual trigger fired");
+      return;
+    }
 
     if (url.pathname !== "/cancel") {
       res.writeHead(404, { "Content-Type": "text/plain" }).end("Not found");
@@ -117,6 +136,6 @@ export function startCancelServer(config: Config): void {
       await logout(arboxToken);
     }
   }).listen(config.port, () => {
-    console.log(`  Cancel server: listening on port ${config.port}`);
+    console.log(`  HTTP server:  listening on port ${config.port}`);
   });
 }

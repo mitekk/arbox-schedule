@@ -5,7 +5,26 @@ import type { Config } from "./config";
 import type { Notifier } from "./notify";
 import { toLocalDate } from "./utils";
 
+let inflight = false;
+
+export function isStandbyRunning(): boolean {
+  return inflight;
+}
+
 export async function runStandbyJob(
+  config: Config,
+  notifier: Notifier
+): Promise<void> {
+  if (inflight) return;
+  inflight = true;
+  try {
+    await runStandbyJobImpl(config, notifier);
+  } finally {
+    inflight = false;
+  }
+}
+
+async function runStandbyJobImpl(
   config: Config,
   notifier: Notifier
 ): Promise<void> {
@@ -86,6 +105,10 @@ export async function runStandbyJob(
         }
         console.log(
           `[standby] Lost standby for series ${entry.seriesId} on ${entry.date}`
+        );
+      } else {
+        console.log(
+          `[standby] Still waiting for series ${entry.seriesId} on ${entry.date} (${entry.time})`
         );
       }
     }

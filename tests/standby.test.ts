@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runStandbyJob } from "../schedule/standby";
+import { runStandbyJob, isStandbyRunning } from "../schedule/standby";
 import { login, logout } from "../api/requests/auth";
 import { getSchedule, bookClass } from "../api/requests/schedule";
 import { loadState, saveState, removeStandbyEntry } from "../schedule/state";
@@ -254,5 +254,103 @@ describe("runStandbyJob", () => {
     expect(vi.mocked(removeStandbyEntry)).not.toHaveBeenCalled();
     expect(vi.mocked(saveState)).not.toHaveBeenCalled();
     expect(vi.mocked(logout)).toHaveBeenCalled();
+  });
+
+  it("in-flight guard: a second concurrent call returns early without re-running the job", async () => {
+    const entry = makeStandbyEntry({ scheduleId: 1001, date: FUTURE_DATE });
+    vi.mocked(loadState).mockReturnValue({ standby: [entry] });
+
+    // Hold getSchedule open until we manually resolve it, so the first call
+    // is still in-flight when the second is invoked.
+    let release: (v: unknown) => void = () => {};
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(getSchedule).mockImplementation(async () => {
+      await gate;
+      return {
+        data: [
+          makeScheduleItem({
+            id: 1001,
+            user_in_standby: 7,
+            availability_id: null,
+            date: FUTURE_DATE,
+          }),
+        ],
+      } as any;
+    });
+
+    const notifier = makeNotifier();
+    const first = runStandbyJob(makeConfig(), notifier);
+    const second = runStandbyJob(makeConfig(), notifier);
+
+    // The second call should resolve immediately (guard short-circuits).
+    await second;
+    expect(vi.mocked(login)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getSchedule)).toHaveBeenCalledTimes(1);
+
+    // Now release the first run so it can finish.
+    release(undefined);
+    await first;
+
+    expect(vi.mocked(login)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getSchedule)).toHaveBeenCalledTimes(1);
+  });
+
+  it("isStandbyRunning() reflects in-flight state during execution and resets after", async () => {
+    const entry = makeStandbyEntry({ scheduleId: 1001, date: FUTURE_DATE });
+    vi.mocked(loadState).mockReturnValue({ standby: [entry] });
+
+    let observedDuringRun = false;
+    vi.mocked(getSchedule).mockImplementation(async () => {
+      observedDuringRun = isStandbyRunning();
+      return {
+        data: [
+          makeScheduleItem({
+            id: 1001,
+            user_in_standby: 7,
+            availability_id: null,
+            date: FUTURE_DATE,
+          }),
+        ],
+      } as any;
+    });
+
+    expect(isStandbyRunning()).toBe(false);
+    await runStandbyJob(makeConfig(), makeNotifier());
+    expect(observedDuringRun).toBe(true);
+    expect(isStandbyRunning()).toBe(false);
+  });
+
+  it("logs a 'Still waiting' line when entry is on standby with no opening", async () => {
+    const entry = makeStandbyEntry({
+      scheduleId: 1001,
+      seriesId: 101,
+      date: FUTURE_DATE,
+    });
+    vi.mocked(loadState).mockReturnValue({ standby: [entry] });
+    vi.mocked(getSchedule).mockResolvedValue({
+      data: [
+        makeScheduleItem({
+          id: 1001,
+          user_in_standby: 7,
+          availability_id: null,
+          user_booked: null,
+          date: FUTURE_DATE,
+        }),
+      ],
+    } as any);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runStandbyJob(makeConfig(), makeNotifier());
+
+    const stillWaitingLogs = logSpy.mock.calls
+      .map((args) => args.join(" "))
+      .filter((line) => line.includes("Still waiting"));
+    expect(stillWaitingLogs.length).toBe(1);
+    expect(stillWaitingLogs[0]).toMatch(/series 101/);
+    expect(stillWaitingLogs[0]).toMatch(new RegExp(FUTURE_DATE));
+
+    logSpy.mockRestore();
   });
 });
