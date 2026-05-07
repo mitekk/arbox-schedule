@@ -1,6 +1,7 @@
 import { login, logout } from "../api/requests/auth";
 import { getSchedule, bookClass, joinStandBy } from "../api/requests/schedule";
 import { addStandbyEntry } from "./state";
+import { buildCancelUrl } from "./cancel";
 import type { Config } from "./config";
 import type { Notifier, LessonOutcome } from "./notify";
 import { toLocalDate } from "./utils";
@@ -68,6 +69,7 @@ export async function runBookingJob(
           time: item.time,
           endTime: item.end_time,
           status: "booked",
+          cancelUrl: buildCancelUrl(item.id, config),
         });
         console.log(
           `[booking] Booked ${item.box_categories.name} on ${item.date} at ${item.time}`

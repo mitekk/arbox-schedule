@@ -8,6 +8,9 @@ export interface Config {
   secondarySeriesIds: number[];
   resendApiKey: string;
   notificationEmail: string;
+  cancelSecret?: string;
+  baseUrl?: string;
+  port: number;
 }
 
 export function loadConfig(): Config {
@@ -39,5 +42,8 @@ export function loadConfig(): Config {
       .map(Number),
     resendApiKey: process.env.RESEND_API_KEY!,
     notificationEmail: process.env.NOTIFICATION_EMAIL!,
+    cancelSecret: process.env.CANCEL_SECRET || undefined,
+    baseUrl: process.env.BASE_URL || undefined,
+    port: parseInt(process.env.PORT ?? "3000", 10),
   };
 }

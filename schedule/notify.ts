@@ -11,6 +11,7 @@ export interface LessonOutcome {
   endTime?: string;
   status: LessonStatus;
   standbyPosition?: number;
+  cancelUrl?: string;
 }
 
 interface IcsEvent {
@@ -49,7 +50,10 @@ function generateIcs(events: IcsEvent[]): string {
 
 export interface Notifier {
   sendBookingSessionSummary: (outcomes: LessonOutcome[]) => Promise<void>;
-  sendConfirmedEmail: (entry: StandbyEntry) => Promise<void>;
+  sendConfirmedEmail: (
+    entry: StandbyEntry,
+    cancelUrl?: string
+  ) => Promise<void>;
   sendStandbyLostEmail: (entry: StandbyEntry) => Promise<void>;
   sendExpiredEmail: (entry: StandbyEntry) => Promise<void>;
 }
@@ -89,7 +93,8 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
       const lines = outcomes.map((o) => {
         const date = formatDate(o.date);
         if (o.status === "booked") {
-          return `✅ ${o.className} — ${date} ב-${o.time}\n   מאמן: ${o.coachName}`;
+          const cancelLine = o.cancelUrl ? `\n   Cancel: ${o.cancelUrl}` : "";
+          return `✅ ${o.className} — ${date} ב-${o.time}\n   מאמן: ${o.coachName}${cancelLine}`;
         } else if (o.status === "standby") {
           return `⏳ ${o.className} — ${date} ב-${o.time}\n   Standby position: #${o.standbyPosition}\n   מאמן: ${o.coachName}`;
         } else {
@@ -110,7 +115,7 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
         bookedEvents.length > 0 ? generateIcs(bookedEvents) : undefined;
       return send(subject, lines.join("\n\n"), ics);
     },
-    sendConfirmedEmail: (entry) => {
+    sendConfirmedEmail: (entry, cancelUrl) => {
       const ics =
         entry.className && entry.time && entry.endTime
           ? generateIcs([
@@ -123,9 +128,12 @@ export function createNotifier(apiKey: string, toEmail: string): Notifier {
               },
             ])
           : undefined;
+      const cancelLine = cancelUrl
+        ? `\n\nCancel your booking: ${cancelUrl}`
+        : "";
       return send(
         "✅ Standby confirmed",
-        `Confirmed standby spot for series ${entry.seriesId} on ${entry.date}.`,
+        `Confirmed standby spot for series ${entry.seriesId} on ${entry.date}.${cancelLine}`,
         ics
       );
     },
