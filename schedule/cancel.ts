@@ -8,8 +8,6 @@ import type { Notifier } from "./notify";
 
 interface CancelPayload {
   scheduleId: number;
-  locationsBoxFk: number;
-  boxFk: number;
   exp: number; // Unix seconds
 }
 
@@ -23,8 +21,6 @@ export function buildCancelUrl(
 
   const payload: CancelPayload = {
     scheduleId,
-    locationsBoxFk: config.locationId,
-    boxFk: config.boxId,
     exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
   };
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -116,9 +112,8 @@ export function startServer(config: Config, notifier: Notifier): Server {
         data: { token: arboxToken },
       } = await login({ email: config.email, password: config.password }));
       await cancelClass(arboxToken, {
-        scheduleFk: payload.scheduleId,
-        locationsBoxFk: payload.locationsBoxFk,
-        boxFk: payload.boxFk,
+        schedule_id: payload.scheduleId,
+        membership_user_id: config.membershipId,
       });
       res
         .writeHead(200, { "Content-Type": "text/plain" })

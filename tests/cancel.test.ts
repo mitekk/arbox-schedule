@@ -38,8 +38,6 @@ describe("buildCancelUrl", () => {
     const token = new URL(url).searchParams.get("token")!;
     const payload = verifyCancelToken(token, "test-secret");
     expect(payload.scheduleId).toBe(1234);
-    expect(payload.locationsBoxFk).toBe(config.locationId);
-    expect(payload.boxFk).toBe(config.boxId);
   });
 });
 
@@ -50,8 +48,6 @@ describe("verifyCancelToken", () => {
     return signToken(
       {
         scheduleId: 1234,
-        locationsBoxFk: 21,
-        boxFk: 99,
         exp: Math.floor(Date.now() / 1000) + 8 * 24 * 3600,
         ...overrides,
       },
@@ -62,8 +58,6 @@ describe("verifyCancelToken", () => {
   it("returns the correct payload for a valid token", () => {
     const payload = verifyCancelToken(freshToken(), SECRET);
     expect(payload.scheduleId).toBe(1234);
-    expect(payload.locationsBoxFk).toBe(21);
-    expect(payload.boxFk).toBe(99);
   });
 
   it("throws on tampered payload", () => {
