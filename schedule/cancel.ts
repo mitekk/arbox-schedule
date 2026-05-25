@@ -128,10 +128,11 @@ export function startServer(config: Config, notifier: Notifier): Server {
         .end("Booking cancelled successfully");
       console.log(`[cancel] Cancelled scheduleId ${payload.scheduleId}`);
     } catch (err) {
-      console.error("[cancel] Failed to cancel:", err);
+      const message = (err as Error).message;
+      console.error("[cancel] Failed to cancel:", message);
       res
         .writeHead(500, { "Content-Type": "text/plain" })
-        .end("Failed to cancel booking");
+        .end(`Failed to cancel booking: ${message}`);
     } finally {
       await logout(arboxToken);
     }
