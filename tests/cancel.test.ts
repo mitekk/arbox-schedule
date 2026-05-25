@@ -12,12 +12,12 @@ function signToken(payload: object, secret: string): string {
 describe("buildCancelUrl", () => {
   it("returns undefined when cancelSecret is not set", () => {
     const config = makeConfig({ baseUrl: "http://localhost:3000" });
-    expect(buildCancelUrl(1234, config)).toBeUndefined();
+    expect(buildCancelUrl(1234, "2026-05-27", config)).toBeUndefined();
   });
 
   it("returns undefined when baseUrl is not set", () => {
     const config = makeConfig({ cancelSecret: "secret" });
-    expect(buildCancelUrl(1234, config)).toBeUndefined();
+    expect(buildCancelUrl(1234, "2026-05-27", config)).toBeUndefined();
   });
 
   it("returns a URL starting with baseUrl/cancel?token=", () => {
@@ -25,7 +25,7 @@ describe("buildCancelUrl", () => {
       cancelSecret: "secret",
       baseUrl: "http://localhost:3000",
     });
-    const url = buildCancelUrl(1234, config);
+    const url = buildCancelUrl(1234, "2026-05-27", config);
     expect(url).toMatch(/^http:\/\/localhost:3000\/cancel\?token=\S+/);
   });
 
@@ -34,10 +34,11 @@ describe("buildCancelUrl", () => {
       cancelSecret: "test-secret",
       baseUrl: "http://localhost:3000",
     });
-    const url = buildCancelUrl(1234, config)!;
+    const url = buildCancelUrl(1234, "2026-05-27", config)!;
     const token = new URL(url).searchParams.get("token")!;
     const payload = verifyCancelToken(token, "test-secret");
     expect(payload.scheduleId).toBe(1234);
+    expect(payload.date).toBe("2026-05-27");
   });
 });
 
@@ -48,6 +49,7 @@ describe("verifyCancelToken", () => {
     return signToken(
       {
         scheduleId: 1234,
+        date: "2026-05-27",
         exp: Math.floor(Date.now() / 1000) + 8 * 24 * 3600,
         ...overrides,
       },

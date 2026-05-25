@@ -69,7 +69,7 @@ export async function runBookingJob(
           time: item.time,
           endTime: item.end_time,
           status: "booked",
-          cancelUrl: buildCancelUrl(item.id, config),
+          cancelUrl: buildCancelUrl(item.id, item.date, config),
         });
         console.log(
           `[booking] Booked ${item.box_categories.name} on ${item.date} at ${item.time}`

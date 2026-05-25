@@ -5,8 +5,9 @@ export interface BookClassRequest {
 }
 
 export interface CancelClassRequest {
+  schedule_user_id: number;
   schedule_id: number;
-  membership_user_id: number;
+  late_cancel: boolean;
 }
 
 export interface StandByRequest {

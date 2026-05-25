@@ -1,13 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { login, logout } from "../api/requests/auth";
-import { cancelClass } from "../api/requests/schedule";
+import { getSchedule, cancelClass } from "../api/requests/schedule";
 import type { Config } from "./config";
 import { runStandbyJob, isStandbyRunning } from "./standby";
 import type { Notifier } from "./notify";
 
 interface CancelPayload {
   scheduleId: number;
+  date: string; // "YYYY-MM-DD"
   exp: number; // Unix seconds
 }
 
@@ -15,12 +16,14 @@ const TTL_SECONDS = 8 * 24 * 60 * 60;
 
 export function buildCancelUrl(
   scheduleId: number,
+  date: string,
   config: Config
 ): string | undefined {
   if (!config.cancelSecret || !config.baseUrl) return undefined;
 
   const payload: CancelPayload = {
     scheduleId,
+    date,
     exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
   };
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -111,9 +114,24 @@ export function startServer(config: Config, notifier: Notifier): Server {
       ({
         data: { token: arboxToken },
       } = await login({ email: config.email, password: config.password }));
+      const dateZ = `${payload.date}T00:00:00.000Z`;
+      const { data: items } = await getSchedule(arboxToken, {
+        from: dateZ,
+        to: dateZ,
+        locations_box_id: config.locationId,
+        boxes_id: config.boxId,
+      });
+      const item = items.find((i) => i.id === payload.scheduleId);
+      if (!item || item.user_booked === null) {
+        res
+          .writeHead(404, { "Content-Type": "text/plain" })
+          .end("Booking not found");
+        return;
+      }
       await cancelClass(arboxToken, {
+        schedule_user_id: item.user_booked,
         schedule_id: payload.scheduleId,
-        membership_user_id: config.membershipId,
+        late_cancel: false,
       });
       res
         .writeHead(200, { "Content-Type": "text/plain" })
