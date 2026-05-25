@@ -16,8 +16,16 @@ export async function apiFetch<T>(
     },
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(`${res.status}: ${JSON.stringify(body)}`);
+    const text = await res.text().catch(() => "");
+    let body: string | null = null;
+    if (text) {
+      try {
+        body = JSON.stringify(JSON.parse(text));
+      } catch {
+        body = text.slice(0, 200);
+      }
+    }
+    throw new Error(`${res.status}: ${body}`);
   }
   return res.json() as Promise<T>;
 }
