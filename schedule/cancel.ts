@@ -110,14 +110,11 @@ export function startServer(config: Config, notifier: Notifier): Server {
       return;
     }
 
-    const {
-      data: { token: arboxToken },
-    } = await login({
-      email: config.email,
-      password: config.password,
-    });
-
+    let arboxToken: string | undefined;
     try {
+      ({
+        data: { token: arboxToken },
+      } = await login({ email: config.email, password: config.password }));
       await cancelClass(arboxToken, {
         scheduleFk: payload.scheduleId,
         locationsBoxFk: payload.locationsBoxFk,
@@ -134,7 +131,7 @@ export function startServer(config: Config, notifier: Notifier): Server {
         .writeHead(500, { "Content-Type": "text/plain" })
         .end(`Failed to cancel booking: ${message}`);
     } finally {
-      await logout(arboxToken);
+      if (arboxToken) await logout(arboxToken);
     }
   }).listen(config.port, () => {
     console.log(`  HTTP server:  listening on port ${config.port}`);
