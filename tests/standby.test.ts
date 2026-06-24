@@ -1,9 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runStandbyJob, isStandbyRunning } from "../schedule/standby";
+import {
+  runStandbyJob,
+  isStandbyRunning,
+  syncStandbyEntries,
+} from "../schedule/standby";
 import { login, logout } from "../api/requests/auth";
 import { getSchedule, bookClass } from "../api/requests/schedule";
-import { loadState, saveState, removeStandbyEntry } from "../schedule/state";
+import {
+  loadState,
+  saveState,
+  addStandbyEntry,
+  removeStandbyEntry,
+} from "../schedule/state";
 import {
   makeScheduleItem,
   makeConfig,
@@ -352,5 +361,77 @@ describe("runStandbyJob", () => {
     expect(stillWaitingLogs[0]).toMatch(new RegExp(FUTURE_DATE));
 
     logSpy.mockRestore();
+  });
+});
+
+describe("syncStandbyEntries", () => {
+  it("registers waitlisted classes not already tracked; ignores booked, non-waitlist, and already-tracked", async () => {
+    vi.mocked(loadState).mockReturnValue({
+      standby: [makeStandbyEntry({ scheduleId: 1001 })],
+    });
+    vi.mocked(getSchedule).mockResolvedValue({
+      data: [
+        // already tracked -> skip
+        makeScheduleItem({ id: 1001, user_in_standby: 42, date: FUTURE_DATE }),
+        // new waitlist entry -> add
+        makeScheduleItem({
+          id: 2002,
+          series_fk: 202,
+          user_in_standby: 43,
+          date: FUTURE_DATE,
+        }),
+        // waitlisted but already booked -> skip
+        makeScheduleItem({
+          id: 3003,
+          user_in_standby: 44,
+          user_booked: 77,
+          date: FUTURE_DATE,
+        }),
+        // not on waitlist -> skip
+        makeScheduleItem({
+          id: 4004,
+          user_in_standby: null,
+          date: FUTURE_DATE,
+        }),
+      ],
+    } as any);
+
+    const added = await syncStandbyEntries(makeConfig());
+
+    const expected = {
+      scheduleId: 2002,
+      seriesId: 202,
+      date: FUTURE_DATE,
+      className: "CrossFit",
+      time: "07:00",
+      endTime: "08:00",
+    };
+    expect(vi.mocked(login)).toHaveBeenCalled();
+    expect(vi.mocked(addStandbyEntry)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(addStandbyEntry)).toHaveBeenCalledWith(expected);
+    expect(added).toEqual([expected]);
+    expect(vi.mocked(logout)).toHaveBeenCalledWith(TOKEN);
+  });
+
+  it("queries a +T00:00:00.000Z date range and returns [] when there are no waitlist entries", async () => {
+    vi.mocked(loadState).mockReturnValue({ standby: [] });
+    vi.mocked(getSchedule).mockResolvedValue({
+      data: [makeScheduleItem({ id: 5005, user_in_standby: null })],
+    } as any);
+
+    const added = await syncStandbyEntries(makeConfig());
+
+    expect(added).toEqual([]);
+    expect(vi.mocked(addStandbyEntry)).not.toHaveBeenCalled();
+    expect(vi.mocked(getSchedule)).toHaveBeenCalledWith(
+      TOKEN,
+      expect.objectContaining({
+        from: expect.stringMatching(/T00:00:00\.000Z$/),
+        to: expect.stringMatching(/T00:00:00\.000Z$/),
+        locations_box_id: makeConfig().locationId,
+        boxes_id: makeConfig().boxId,
+      })
+    );
+    expect(vi.mocked(logout)).toHaveBeenCalledWith(TOKEN);
   });
 });

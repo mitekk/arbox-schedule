@@ -2,15 +2,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { startServer, buildCancelUrl } from "../schedule/cancel";
-import { runStandbyJob, isStandbyRunning } from "../schedule/standby";
+import { startServer } from "../schedule/server";
+import { buildCancelUrl } from "../schedule/cancel";
+import {
+  runStandbyJob,
+  isStandbyRunning,
+  syncStandbyEntries,
+} from "../schedule/standby";
 import { login, logout } from "../api/requests/auth";
 import { getSchedule, cancelClass } from "../api/requests/schedule";
+import { loadState, type StandbyEntry } from "../schedule/state";
 import { makeConfig, makeScheduleItem } from "./helpers/factories";
 import type { Notifier } from "../schedule/notify";
 import type { Config } from "../schedule/config";
 
 vi.mock("../schedule/standby");
+vi.mock("../schedule/state");
 vi.mock("../api/requests/auth");
 vi.mock("../api/requests/schedule");
 
@@ -43,6 +50,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(runStandbyJob).mockResolvedValue(undefined);
   vi.mocked(isStandbyRunning).mockReturnValue(false);
+  vi.mocked(syncStandbyEntries).mockResolvedValue([]);
+  vi.mocked(loadState).mockReturnValue({ standby: [] });
   vi.mocked(login).mockResolvedValue({ data: { token: ARBOX_TOKEN } } as any);
   vi.mocked(logout).mockResolvedValue(undefined);
 });
@@ -86,6 +95,50 @@ describe("HTTP server — POST /standby/run", () => {
     const res = await fetch(`${baseUrl}/does-not-exist`, { method: "GET" });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe("HTTP server — POST /standby/sync", () => {
+  beforeEach(async () => {
+    await startWith();
+  });
+
+  it("registers discovered waitlist entries and returns 200 with added + tracked", async () => {
+    const added: StandbyEntry[] = [
+      {
+        scheduleId: 1001,
+        seriesId: 569196,
+        date: "2026-06-26",
+        className: "CrossFit",
+        time: "18:00",
+        endTime: "19:00",
+      },
+    ];
+    vi.mocked(syncStandbyEntries).mockResolvedValue(added);
+    vi.mocked(loadState).mockReturnValue({ standby: added });
+
+    const res = await fetch(`${baseUrl}/standby/sync`, { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(await res.json()).toEqual({ added, tracked: added });
+    expect(vi.mocked(syncStandbyEntries)).toHaveBeenCalledWith(activeConfig);
+  });
+
+  it("returns 500 when sync fails", async () => {
+    vi.mocked(syncStandbyEntries).mockRejectedValue(new Error("boom"));
+
+    const res = await fetch(`${baseUrl}/standby/sync`, { method: "POST" });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ status: "error", message: "boom" });
+  });
+
+  it("returns 404 for GET /standby/sync (only POST is accepted)", async () => {
+    const res = await fetch(`${baseUrl}/standby/sync`, { method: "GET" });
+
+    expect(res.status).toBe(404);
+    expect(vi.mocked(syncStandbyEntries)).not.toHaveBeenCalled();
   });
 });
 

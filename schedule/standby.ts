@@ -1,6 +1,12 @@
 import { login, logout } from "../api/requests/auth";
 import { getSchedule, bookClass } from "../api/requests/schedule";
-import { loadState, saveState, removeStandbyEntry } from "./state";
+import {
+  loadState,
+  saveState,
+  addStandbyEntry,
+  removeStandbyEntry,
+  type StandbyEntry,
+} from "./state";
 import type { Config } from "./config";
 import type { Notifier } from "./notify";
 import { toLocalDate } from "./utils";
@@ -21,6 +27,54 @@ export async function runStandbyJob(
     await runStandbyJobImpl(config, notifier);
   } finally {
     inflight = false;
+  }
+}
+
+// Discover the user's current Arbox waitlist entries and register any that
+// aren't already tracked, so the standby job will watch them.
+export async function syncStandbyEntries(
+  config: Config
+): Promise<StandbyEntry[]> {
+  const {
+    data: { token },
+  } = await login({ email: config.email, password: config.password });
+
+  try {
+    const from = toLocalDate(new Date());
+    const end = new Date();
+    end.setDate(end.getDate() + 14);
+    const to = toLocalDate(end);
+
+    const { data: items } = await getSchedule(token, {
+      from: `${from}T00:00:00.000Z`,
+      to: `${to}T00:00:00.000Z`,
+      locations_box_id: config.locationId,
+      boxes_id: config.boxId,
+    });
+
+    const tracked = new Set(loadState().standby.map((e) => e.scheduleId));
+    const added: StandbyEntry[] = [];
+
+    for (const item of items) {
+      // On the waitlist for this class, not yet confirmed
+      if (item.user_in_standby == null || item.user_booked != null) continue;
+      if (tracked.has(item.id)) continue;
+
+      const entry: StandbyEntry = {
+        scheduleId: item.id,
+        seriesId: item.series_fk,
+        date: item.date,
+        className: item.box_categories.name,
+        time: item.time,
+        endTime: item.end_time,
+      };
+      addStandbyEntry(entry);
+      added.push(entry);
+    }
+
+    return added;
+  } finally {
+    await logout(token);
   }
 }
 
