@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import type { Db } from "../../platform/db";
 
 export type EffectType = "book" | "confirm" | "standby-join" | "cancel";
 
@@ -16,8 +17,8 @@ function keyArgs(k: EffectKey): [EffectType, number, string, string] {
 /**
  * Try to claim the lease for an effect. Returns true if THIS caller won and may
  * proceed with the (non-idempotent) Arbox call; false if another path already
- * owns it (caller must NOT call Arbox). Committed immediately — this is the
- * primary guard against double-booking the real account.
+ * owns it (caller must NOT call Arbox). Must run on the pool (committed
+ * immediately) — this is the primary guard against double-booking.
  */
 export async function acquireLease(
   pool: Pool,
@@ -34,11 +35,11 @@ export async function acquireLease(
 }
 
 export async function completeLease(
-  pool: Pool,
+  db: Db,
   key: EffectKey,
   result?: unknown
 ): Promise<void> {
-  await pool.query(
+  await db.query(
     `UPDATE arbox.effect_ledger SET status='done', result=$5, updated_at=now()
      WHERE effect_type=$1 AND schedule_id=$2 AND for_date=$3 AND attempt_key=$4`,
     [...keyArgs(key), result === undefined ? null : JSON.stringify(result)]
@@ -46,11 +47,11 @@ export async function completeLease(
 }
 
 export async function failLease(
-  pool: Pool,
+  db: Db,
   key: EffectKey,
   error: string
 ): Promise<void> {
-  await pool.query(
+  await db.query(
     `UPDATE arbox.effect_ledger SET status='failed', result=$5, updated_at=now()
      WHERE effect_type=$1 AND schedule_id=$2 AND for_date=$3 AND attempt_key=$4`,
     [...keyArgs(key), JSON.stringify({ error: error.slice(0, 500) })]
@@ -58,10 +59,10 @@ export async function failLease(
 }
 
 export async function getLeaseStatus(
-  pool: Pool,
+  db: Db,
   key: EffectKey
 ): Promise<string | null> {
-  const res = await pool.query<{ status: string }>(
+  const res = await db.query<{ status: string }>(
     `SELECT status FROM arbox.effect_ledger
      WHERE effect_type=$1 AND schedule_id=$2 AND for_date=$3 AND attempt_key=$4`,
     keyArgs(key)
@@ -73,8 +74,8 @@ export async function getLeaseStatus(
  * Release a not-yet-done lease so a future attempt can retry. Use ONLY when
  * certain the Arbox effect did NOT happen (e.g. a failure BEFORE the call).
  */
-export async function releaseLease(pool: Pool, key: EffectKey): Promise<void> {
-  await pool.query(
+export async function releaseLease(db: Db, key: EffectKey): Promise<void> {
+  await db.query(
     `DELETE FROM arbox.effect_ledger
      WHERE effect_type=$1 AND schedule_id=$2 AND for_date=$3 AND attempt_key=$4
        AND status <> 'done'`,
