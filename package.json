@@ -3,12 +3,13 @@
   "private": true,
   "scripts": {
     "build": "tsc --noEmit",
+    "build:dist": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "start": "ts-node schedule/scheduler.ts",
+    "start": "ts-node src/main.ts",
     "migrate": "ts-node src/platform/migrate.ts",
     "prepare": "husky"
   },

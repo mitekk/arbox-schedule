@@ -2,7 +2,9 @@ import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import type { Pool } from "pg";
 
-const MIGRATIONS_DIR = join(__dirname, "..", "..", "migrations");
+// Resolve relative to the working directory (repo root in dev, /app in the
+// container) so it works the same under ts-node and the compiled dist build.
+const MIGRATIONS_DIR = join(process.cwd(), "migrations");
 
 /**
  * Apply any migrations/*.sql files not yet recorded in
