@@ -2,6 +2,9 @@ import { Pool, type PoolClient } from "pg";
 
 export type Tx = PoolClient;
 
+/** A pool or a transaction client — for repo functions usable in either. */
+export type Db = Pool | PoolClient;
+
 export function createPool(connectionString: string): Pool {
   // Neon requires SSL; the connection string carries sslmode=require.
   return new Pool({ connectionString, max: 10 });

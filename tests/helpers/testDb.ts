@@ -27,6 +27,6 @@ export async function startTestDb(): Promise<TestDb> {
 export async function truncateAll(pool: Pool): Promise<void> {
   await pool.query(
     `TRUNCATE platform.outbox, platform.consumed, arbox.effect_ledger,
-              notification.sent_email RESTART IDENTITY`
+              notification.sent_email, standby.watch_entry RESTART IDENTITY`
   );
 }
