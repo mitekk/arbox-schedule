@@ -52,14 +52,14 @@ race so you don't have to sit at your phone:
 Targets next week (Sunday–Saturday) and walks your series IDs in priority order — primary list first,
 then secondary — booking up to **2 lessons** per week. For each candidate:
 
-| Class state | Action |
-|---|---|
-| Already booked / on standby | Counts as a slot, skips |
-| Spot available (`free > 0`) | Books immediately |
-| Class full (`free == 0`) | Joins standby, records the entry in `state.json` |
+| Class state                 | Action                                           |
+| --------------------------- | ------------------------------------------------ |
+| Already booked / on standby | Counts as a slot, skips                          |
+| Spot available (`free > 0`) | Books immediately                                |
+| Class full (`free == 0`)    | Joins standby, records the entry in `state.json` |
 
-> **Note on `has_spots`:** the Arbox API exposes a `has_spots` field, but it reflects *membership
-> eligibility*, not raw availability. The bot uses `free > 0` instead. See [`docs/api.md`](docs/api.md).
+> **Note on `has_spots`:** the Arbox API exposes a `has_spots` field, but it reflects _membership
+> eligibility_, not raw availability. The bot uses `free > 0` instead. See [`docs/api.md`](docs/api.md).
 
 ### Standby confirmation
 
@@ -73,10 +73,10 @@ logged and the entry is retried next cycle.
 
 The scheduler also runs a tiny HTTP server (default port `3000`) exposing:
 
-| Endpoint | Purpose |
-|---|---|
+| Endpoint              | Purpose                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------- |
 | `GET /cancel?token=…` | Cancels a booking from a signed link embedded in booking emails (HMAC-SHA256, ~8-day TTL) |
-| `POST /standby/run` | Fires the standby job on demand (`202 started`, or `409 already-running`) |
+| `POST /standby/run`   | Fires the standby job on demand (`202 started`, or `409 already-running`)                 |
 
 Cancellation links are only generated when `CANCEL_SECRET` and `BASE_URL` are set.
 
@@ -166,36 +166,36 @@ which classes you are on standby for — the only persistent runtime artifact.
 
 ## Tech stack
 
-| Layer | Tech |
-|---|---|
-| Runtime | Node 22, TypeScript 5 (run via `ts-node`) |
-| Scheduling | [node-cron](https://www.npmjs.com/package/node-cron) (`Asia/Jerusalem` timezone) |
-| HTTP server | Node `http` (no framework) |
-| Email | [Resend](https://resend.com) |
-| Config | `dotenv` |
-| Tests | [Vitest](https://vitest.dev) |
-| Lint / format | ESLint + Prettier (Husky pre-commit) |
-| Packaging | Docker (`node:22-alpine`) |
+| Layer         | Tech                                                                             |
+| ------------- | -------------------------------------------------------------------------------- |
+| Runtime       | Node 22, TypeScript 5 (run via `ts-node`)                                        |
+| Scheduling    | [node-cron](https://www.npmjs.com/package/node-cron) (`Asia/Jerusalem` timezone) |
+| HTTP server   | Node `http` (no framework)                                                       |
+| Email         | [Resend](https://resend.com)                                                     |
+| Config        | `dotenv`                                                                         |
+| Tests         | [Vitest](https://vitest.dev)                                                     |
+| Lint / format | ESLint + Prettier (Husky pre-commit)                                             |
+| Packaging     | Docker (`node:22-alpine`)                                                        |
 
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in the values:
 
-| Variable | Description |
-|---|---|
-| `ARBOX_EMAIL` | Your Arbox login email |
-| `ARBOX_PASSWORD` | Your Arbox password |
-| `BOX_ID` | Numeric ID of your gym (box) |
-| `LOCATION_ID` | Numeric ID of the gym location (`locations_box` ID) |
-| `MEMBERSHIP_ID` | Your active membership record ID (required to book) |
-| `PRIMARY_SERIES_IDS` | Comma-separated series IDs — booked first, in order (e.g. `76644881,76647404`) |
-| `SECONDARY_SERIES_IDS` | Comma-separated fallback series IDs — used if primary slots are full |
-| `RESEND_API_KEY` | API key from [resend.com](https://resend.com) |
-| `NOTIFICATION_EMAIL` | Address that receives booking notifications |
-| `CANCEL_SECRET` | _(optional)_ HMAC secret for signed `/cancel` links |
-| `BASE_URL` | _(optional)_ Public base URL used to build `/cancel` links |
-| `PORT` | _(optional)_ HTTP server port (default `3000`) |
-| `STATE_FILE` | _(optional)_ Path to the state JSON file (default `./state.json`) |
+| Variable               | Description                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `ARBOX_EMAIL`          | Your Arbox login email                                                         |
+| `ARBOX_PASSWORD`       | Your Arbox password                                                            |
+| `BOX_ID`               | Numeric ID of your gym (box)                                                   |
+| `LOCATION_ID`          | Numeric ID of the gym location (`locations_box` ID)                            |
+| `MEMBERSHIP_ID`        | Your active membership record ID (required to book)                            |
+| `PRIMARY_SERIES_IDS`   | Comma-separated series IDs — booked first, in order (e.g. `76644881,76647404`) |
+| `SECONDARY_SERIES_IDS` | Comma-separated fallback series IDs — used if primary slots are full           |
+| `RESEND_API_KEY`       | API key from [resend.com](https://resend.com)                                  |
+| `NOTIFICATION_EMAIL`   | Address that receives booking notifications                                    |
+| `CANCEL_SECRET`        | _(optional)_ HMAC secret for signed `/cancel` links                            |
+| `BASE_URL`             | _(optional)_ Public base URL used to build `/cancel` links                     |
+| `PORT`                 | _(optional)_ HTTP server port (default `3000`)                                 |
+| `STATE_FILE`           | _(optional)_ Path to the state JSON file (default `./state.json`)              |
 
 During development, Resend sends from `onboarding@resend.dev`, which only delivers to your
 Resend-verified address. Once you have a verified sending domain, update the `from` field in
@@ -203,12 +203,12 @@ Resend-verified address. Once you have a verified sending domain, update the `fr
 
 **Email notifications:**
 
-| Event | Subject |
-|---|---|
-| Friday booking run complete | `Arbox booking — N of 2 lessons scheduled` |
-| Standby spot confirmed | `✅ Standby confirmed` |
-| Standby position lost | `❌ Standby slot lost` |
-| Standby entry expired (past) | `ℹ️ Standby expired` |
+| Event                        | Subject                                    |
+| ---------------------------- | ------------------------------------------ |
+| Friday booking run complete  | `Arbox booking — N of 2 lessons scheduled` |
+| Standby spot confirmed       | `✅ Standby confirmed`                     |
+| Standby position lost        | `❌ Standby slot lost`                     |
+| Standby entry expired (past) | `ℹ️ Standby expired`                       |
 
 ## Testing
 
