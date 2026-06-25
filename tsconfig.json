@@ -10,5 +10,11 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["api/**/*", "schedule/**/*", "scripts/**/*", "tests/**/*"]
+  "include": [
+    "api/**/*",
+    "schedule/**/*",
+    "src/**/*",
+    "scripts/**/*",
+    "tests/**/*"
+  ]
 }
