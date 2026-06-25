@@ -240,6 +240,9 @@ repo, let it detect the `Dockerfile`, set the env vars, and mount the state volu
 
 ## Docs & decisions
 
+- **Architecture & flows:** [`docs/architecture.md`](docs/architecture.md) — Mermaid diagrams of the
+  event-driven design (container view, event catalog, dispatcher lifecycle) and the booking, standby-
+  confirm, and cancel sequences.
 - **Arbox API v2 reference:** [`docs/api.md`](docs/api.md) — auth flow, request/response shapes, error
   codes, and non-obvious behavior (the `has_spots` vs `free` distinction, the standby confirmation flow).
 - **Design spec:** [`docs/superpowers/specs/2026-04-25-lesson-scheduler-design.md`](docs/superpowers/specs/2026-04-25-lesson-scheduler-design.md)
