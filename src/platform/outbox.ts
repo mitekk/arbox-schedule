@@ -60,6 +60,19 @@ export async function claimBatch(
   return res.rows;
 }
 
+/**
+ * When the earliest actionable row comes due, or null when there is nothing to
+ * do. Lets the dispatcher sleep exactly as long as the outbox allows instead of
+ * waking on a fixed interval. Served by the `outbox_ready` partial index.
+ */
+export async function nextAttemptAt(pool: Pool): Promise<Date | null> {
+  const res = await pool.query<{ at: Date | null }>(
+    `SELECT min(next_attempt_at) AS at FROM platform.outbox
+     WHERE status IN ('pending','failed')`
+  );
+  return res.rows[0]?.at ?? null;
+}
+
 export async function markDone(pool: Pool, id: string): Promise<void> {
   await pool.query(
     `UPDATE platform.outbox SET status='done', locked_at=NULL WHERE id=$1`,

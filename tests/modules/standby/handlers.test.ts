@@ -240,3 +240,75 @@ describe("standby StandbyJoined consumer", () => {
     expect(rows.map((r) => r.scheduleId)).toEqual([4004]);
   });
 });
+
+// The gate the 10-minute cron consults. It has to be answerable from memory:
+// querying the database to decide whether to query the database would defeat
+// the point, since any query keeps a scale-to-zero compute awake.
+describe("standby isWatching gate", () => {
+  it("starts optimistic so a restart never silently stops watching", () => {
+    expect(createStandby({ pool, client: mockClient() }).isWatching()).toBe(
+      true
+    );
+  });
+
+  it("goes false once a tick finds nothing left to watch", async () => {
+    const standby = createStandby({ pool, client: mockClient() });
+    await standby.handleStandbyTick(); // empty watchlist
+    expect(standby.isWatching()).toBe(false);
+  });
+
+  it("stays true while an entry is still waiting", async () => {
+    await seedWatch();
+    const standby = createStandby({
+      pool,
+      client: mockClient({
+        getDaySchedule: vi
+          .fn()
+          .mockResolvedValue([
+            makeScheduleItem({ id: SID, date: FUTURE, user_in_standby: 3 }),
+          ]),
+      }),
+    });
+    await standby.handleStandbyTick();
+    expect(standby.isWatching()).toBe(true);
+  });
+
+  it("goes false after the last entry expires", async () => {
+    await seedWatch(PAST);
+    const standby = createStandby({ pool, client: mockClient() });
+    await standby.handleStandbyTick();
+    expect(await watchStatus()).toBe("expired");
+    expect(standby.isWatching()).toBe(false);
+  });
+
+  it("goes back to true when a StandbyJoined event adds an entry", async () => {
+    const standby = createStandby({ pool, client: mockClient() });
+    await standby.handleStandbyTick();
+    expect(standby.isWatching()).toBe(false);
+
+    await standby.routes().StandbyJoined![0].handle({
+      messageId: "m2",
+      name: "StandbyJoined",
+      kind: "event",
+      payload: { scheduleId: 5005, seriesId: 9, date: FUTURE },
+    } as Message);
+    expect(standby.isWatching()).toBe(true);
+  });
+
+  it("goes back to true when a sync discovers an entry", async () => {
+    const standby = createStandby({
+      pool,
+      client: mockClient({
+        getWeekSchedule: vi
+          .fn()
+          .mockResolvedValue([
+            makeScheduleItem({ id: SID, date: FUTURE, user_in_standby: 5 }),
+          ]),
+      }),
+    });
+    await standby.handleStandbyTick();
+    expect(standby.isWatching()).toBe(false);
+    await standby.handleStandbySync();
+    expect(standby.isWatching()).toBe(true);
+  });
+});

@@ -3,12 +3,14 @@ import type { Pool } from "pg";
 import { withTx } from "../platform/db";
 import { emit } from "../platform/outbox";
 import type { Config } from "../platform/config";
+import type { Dispatcher } from "../platform/dispatcher";
 import type { CancellationHandler } from "../modules/cancellation/handler";
 import type { SyncResult } from "../modules/standby/handlers";
 
 export interface GatewayDeps {
   pool: Pool;
   config: Pick<Config, "port" | "triggerToken">;
+  dispatcher: Pick<Dispatcher, "wake">;
   cancellation: CancellationHandler;
   standby: { handleStandbySync(): Promise<SyncResult> };
 }
@@ -21,7 +23,7 @@ const TEXT_HEADERS = { "Content-Type": "text/plain" };
  * work) or runs a handler inline (cancel/sync — a human blocks on the result).
  */
 export function startServer(deps: GatewayDeps): Server {
-  const { pool, config, cancellation, standby } = deps;
+  const { pool, config, dispatcher, cancellation, standby } = deps;
 
   function triggerAuthorized(req: IncomingMessage): boolean {
     if (!config.triggerToken) return true;
@@ -31,13 +33,10 @@ export function startServer(deps: GatewayDeps): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
 
+    // Deliberately does NOT touch the database: this is a container liveness
+    // probe, and probing it on an interval would hold the compute awake.
     if (url.pathname === "/healthz" && req.method === "GET") {
-      try {
-        await pool.query("SELECT 1");
-        res.writeHead(200, TEXT_HEADERS).end("ok");
-      } catch {
-        res.writeHead(500, TEXT_HEADERS).end("db error");
-      }
+      res.writeHead(200, TEXT_HEADERS).end("ok");
       return;
     }
 
@@ -60,6 +59,7 @@ export function startServer(deps: GatewayDeps): Server {
         return;
       }
       await withTx(pool, (tx) => emit(tx, "StandbyTickRequested", {}));
+      dispatcher.wake();
       res
         .writeHead(202, JSON_HEADERS)
         .end(JSON.stringify({ status: "started" }));

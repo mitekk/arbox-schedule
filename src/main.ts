@@ -77,10 +77,11 @@ async function main(): Promise<void> {
 
   const dispatcher = createDispatcher({ pool, routes });
 
+  // Catch-up runs first so dispatcher.start()'s opening drain picks it up.
   await runStartupCatchup(pool);
   dispatcher.start();
-  startCron(pool);
-  startServer({ pool, config, cancellation, standby });
+  startCron(pool, dispatcher, standby);
+  startServer({ pool, config, dispatcher, cancellation, standby });
 
   log(
     "main",
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
   );
   log(
     "main",
-    "  Booking: Fri 21:00 Asia/Jerusalem | Standby: every 5 min | Dispatcher: poll 10s"
+    "  Booking: Fri 21:00 Asia/Jerusalem | Standby: every 10 min while watching | Dispatcher: on demand"
   );
   log(
     "main",
