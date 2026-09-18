@@ -24,6 +24,7 @@ let baseUrl: string;
 
 const handleCancel = vi.fn<(t: string) => Promise<CancelOutcome>>();
 const handleStandbySync = vi.fn<() => Promise<SyncResult>>();
+const wake = vi.fn<() => void>();
 
 async function start(
   config: { port: number; triggerToken?: string } = { port: 0 }
@@ -31,6 +32,7 @@ async function start(
   server = startServer({
     pool,
     config,
+    dispatcher: { wake },
     cancellation: { handleCancel },
     standby: { handleStandbySync },
   });
@@ -63,11 +65,16 @@ afterEach(async () => {
 });
 
 describe("gateway", () => {
-  it("GET /healthz pings the DB and returns 200", async () => {
+  // A liveness probe that queries Postgres would hold a scale-to-zero compute
+  // awake for as long as the container runs, so this is load-bearing.
+  it("GET /healthz returns 200 without touching the DB", async () => {
     await start();
+    const query = vi.spyOn(pool, "query");
     const res = await fetch(`${baseUrl}/healthz`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
+    expect(query).not.toHaveBeenCalled();
+    query.mockRestore();
   });
 
   it("GET /cancel without a token returns 400 Missing token", async () => {

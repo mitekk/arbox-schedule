@@ -6,6 +6,7 @@ import {
   markDone,
   markFailed,
   markDead,
+  nextAttemptAt,
   reapStuck,
   isConsumed,
   recordConsumed,
@@ -18,7 +19,6 @@ import { logError } from "./logger";
 export interface DispatcherOptions {
   pool: Pool;
   routes: Routes;
-  pollMs?: number;
   batchSize?: number;
   maxAttempts?: number;
   reapAfterSeconds?: number;
@@ -27,19 +27,22 @@ export interface DispatcherOptions {
 export interface Dispatcher {
   /** Run one drain (reap + claim + process). Exposed for tests/manual triggers. */
   tick(): Promise<void>;
+  /** Ask for a drain now. Call after emitting outside of a tick. */
+  wake(): void;
   start(): void;
   stop(): void;
 }
 
 export function createDispatcher(opts: DispatcherOptions): Dispatcher {
   const { pool, routes } = opts;
-  const pollMs = opts.pollMs ?? 10_000;
   const batchSize = opts.batchSize ?? 10;
   const maxAttempts = opts.maxAttempts ?? 8;
   const reapAfterSeconds = opts.reapAfterSeconds ?? 300;
 
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlight = false;
+  let pendingWake = false;
+  let running = false;
 
   async function processRow(row: OutboxRow): Promise<void> {
     const msg = toMessage(row);
@@ -94,25 +97,70 @@ export function createDispatcher(opts: DispatcherOptions): Dispatcher {
     }
   }
 
-  function start(): void {
-    if (timer) return;
-    timer = setInterval(() => {
-      if (inFlight) return;
-      inFlight = true;
-      void tick()
-        .catch((e) => logError("dispatcher", "tick error:", e))
-        .finally(() => {
-          inFlight = false;
-        });
-    }, pollMs);
-  }
-
-  function stop(): void {
+  function clearTimer(): void {
     if (timer) {
-      clearInterval(timer);
+      clearTimeout(timer);
       timer = null;
     }
   }
 
-  return { tick, start, stop };
+  /**
+   * Arm the next wake from the outbox itself: at the earliest `next_attempt_at`,
+   * or NOT AT ALL when nothing is actionable. An idle process therefore issues
+   * no queries, which is what lets a scale-to-zero database actually suspend.
+   */
+  async function scheduleNext(): Promise<void> {
+    if (!running) return;
+    clearTimer();
+    if (pendingWake) {
+      pendingWake = false;
+      drain();
+      return;
+    }
+    let at: Date | null;
+    try {
+      at = await nextAttemptAt(pool);
+    } catch (e) {
+      logError("dispatcher", "failed to read the next attempt time:", e);
+      return;
+    }
+    // `running` can have been cleared by stop() while the query was in flight.
+    if (!at || !running) return;
+    timer = setTimeout(drain, Math.max(0, at.getTime() - Date.now()));
+  }
+
+  /** Drain once, then re-arm. Overlapping calls collapse into one follow-up. */
+  function drain(): void {
+    if (inFlight) {
+      pendingWake = true;
+      return;
+    }
+    inFlight = true;
+    clearTimer();
+    void tick()
+      .catch((e) => logError("dispatcher", "tick error:", e))
+      .finally(() => {
+        inFlight = false;
+        void scheduleNext();
+      });
+  }
+
+  function wake(): void {
+    if (running) drain();
+  }
+
+  function start(): void {
+    if (running) return;
+    running = true;
+    // The first drain also reaps rows a previous process left mid-flight.
+    drain();
+  }
+
+  function stop(): void {
+    running = false;
+    pendingWake = false;
+    clearTimer();
+  }
+
+  return { tick, wake, start, stop };
 }

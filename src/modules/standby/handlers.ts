@@ -13,7 +13,7 @@ import {
   setStatus,
   type WatchEntry,
 } from "./repo";
-import { classify } from "./service";
+import { classify, hasEnded } from "./service";
 
 export interface SyncResult {
   added: WatchEntry[];
@@ -27,6 +27,9 @@ export interface Standby {
   /** Discover the user's current Arbox waitlist entries and register untracked
    *  ones. Synchronous (the gateway returns the result). */
   handleStandbySync(): Promise<SyncResult>;
+  /** True while at least one entry may still be on a waitlist. Answered from
+   *  memory so that a cron tick with nothing to watch costs no query at all. */
+  isWatching(): boolean;
   /** Consumes StandbyJoined (booking joined a waitlist) -> writes watch row. */
   routes(): Routes;
 }
@@ -37,9 +40,14 @@ export function createStandby(deps: {
 }): Standby {
   const { pool, client } = deps;
 
-  async function processEntry(entry: WatchEntry, today: string): Promise<void> {
-    // Expired before any network call (mirrors the original behavior).
-    if (entry.date < today) {
+  // Start optimistic: a wrong guess here costs one extra tick after a restart,
+  // never a missed spot. The first tick replaces it with the truth.
+  let watching = true;
+
+  /** Returns whether the entry is still live and worth checking again. */
+  async function processEntry(entry: WatchEntry, now: Date): Promise<boolean> {
+    // Over before any network call (mirrors the original behavior).
+    if (hasEnded(entry, now)) {
       await withTx(pool, async (tx) => {
         await setStatus(tx, entry.scheduleId, "expired");
         await emit(tx, "StandbyExpired", {
@@ -48,12 +56,12 @@ export function createStandby(deps: {
           date: entry.date,
         });
       });
-      return;
+      return false;
     }
 
     const items = await client.getDaySchedule(entry.date);
     const item = items.find((i) => i.id === entry.scheduleId);
-    const decision = classify(entry, today, item);
+    const decision = classify(entry, now, item);
 
     if (decision.kind === "gone" || decision.kind === "waiting") {
       if (decision.kind === "waiting") {
@@ -62,7 +70,7 @@ export function createStandby(deps: {
           `Still waiting for series ${entry.seriesId} on ${entry.date}`
         );
       }
-      return;
+      return true;
     }
 
     if (decision.kind === "expired") {
@@ -74,7 +82,7 @@ export function createStandby(deps: {
           date: entry.date,
         });
       });
-      return;
+      return false;
     }
 
     if (decision.kind === "lost") {
@@ -86,7 +94,7 @@ export function createStandby(deps: {
           date: entry.date,
         });
       });
-      return;
+      return false;
     }
 
     // decision.kind === "confirm": a slot opened.
@@ -95,7 +103,8 @@ export function createStandby(deps: {
       scheduleId: entry.scheduleId,
       forDate: entry.date,
     };
-    if (!(await acquireLease(pool, key))) return; // another path owns it
+    // Another path owns it; stay live so its outcome is picked up next tick.
+    if (!(await acquireLease(pool, key))) return true;
     try {
       await client.bookSlot(entry.scheduleId, {
         availabilityId: decision.availabilityId,
@@ -108,7 +117,7 @@ export function createStandby(deps: {
         `Confirm failed for series ${entry.seriesId} on ${entry.date}, retrying next cycle:`,
         err instanceof Error ? err.message : err
       );
-      return;
+      return true;
     }
     await completeLease(pool, key);
     await withTx(pool, async (tx) => {
@@ -122,6 +131,7 @@ export function createStandby(deps: {
         endTime: entry.endTime,
       });
     });
+    return false;
   }
 
   async function handleStandbyTick(): Promise<void> {
@@ -136,10 +146,14 @@ export function createStandby(deps: {
         return; // a tick is already running
       }
       const entries = await listWatching(pool);
-      const today = toLocalDate(new Date());
+      const now = new Date();
+      let live = 0;
       for (const entry of entries) {
-        await processEntry(entry, today);
+        if (await processEntry(entry, now)) live++;
       }
+      // The tick has just seen the whole watchlist — no extra query needed to
+      // know whether the next cron fire has anything to do.
+      watching = live > 0;
       await lock.query("COMMIT");
     } catch (err) {
       try {
@@ -175,7 +189,9 @@ export function createStandby(deps: {
         added.push({ ...entry, status: "watching" });
       }
     }
-    return { added, tracked: await listAll(pool) };
+    const tracked = await listAll(pool);
+    watching = tracked.some((e) => e.status === "watching");
+    return { added, tracked };
   }
 
   function routes(): Routes {
@@ -185,7 +201,7 @@ export function createStandby(deps: {
           consumer: "standby",
           handle: async (m) => {
             if (m.name !== "StandbyJoined") return;
-            await upsertWatch(pool, {
+            const added = await upsertWatch(pool, {
               scheduleId: m.payload.scheduleId,
               seriesId: m.payload.seriesId,
               date: m.payload.date,
@@ -193,11 +209,17 @@ export function createStandby(deps: {
               time: m.payload.time,
               endTime: m.payload.endTime,
             });
+            if (added) watching = true;
           },
         },
       ],
     };
   }
 
-  return { handleStandbyTick, handleStandbySync, routes };
+  return {
+    handleStandbyTick,
+    handleStandbySync,
+    isWatching: () => watching,
+    routes,
+  };
 }

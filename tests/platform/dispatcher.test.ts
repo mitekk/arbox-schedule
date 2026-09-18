@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 import type { Pool } from "pg";
 import { startTestDb, truncateAll, type TestDb } from "../helpers/testDb";
 import { withTx } from "../../src/platform/db";
@@ -164,5 +172,84 @@ describe("dispatcher", () => {
     const [row] = await rows();
     expect(row.status).toBe("pending");
     expect(row.locked_at).toBeNull();
+  });
+});
+
+// What decides whether an idle process talks to the database at all: the
+// dispatcher arms its next wake from the outbox instead of a fixed interval,
+// so an empty outbox means no timer and no queries.
+describe("dispatcher scheduling", () => {
+  it("reports no next attempt when the outbox is empty", async () => {
+    const { nextAttemptAt } = await import("../../src/platform/outbox");
+    expect(await nextAttemptAt(pool)).toBeNull();
+  });
+
+  it("reports no next attempt once every row is done", async () => {
+    const { nextAttemptAt } = await import("../../src/platform/outbox");
+    const d = createDispatcher({ pool, routes: {} });
+    await seed("StandbyTickRequested", {});
+    await d.tick();
+    expect(await nextAttemptAt(pool)).toBeNull();
+  });
+
+  it("reports the backoff time of a failed row so the wake can be deferred", async () => {
+    const { nextAttemptAt } = await import("../../src/platform/outbox");
+    const routes: Routes = {
+      StandbyTickRequested: [
+        {
+          consumer: "boom",
+          handle: async () => {
+            throw new Error("kaboom");
+          },
+        },
+      ],
+    };
+    const d = createDispatcher({ pool, routes });
+    await seed("StandbyTickRequested", {});
+    await d.tick();
+
+    const at = await nextAttemptAt(pool);
+    expect(at).not.toBeNull();
+    expect(at!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("reports a due time for work emitted during a tick, so it self-drains", async () => {
+    const { nextAttemptAt } = await import("../../src/platform/outbox");
+    const routes: Routes = {
+      StandbyTickRequested: [
+        {
+          consumer: "boom",
+          handle: async () => {
+            throw new Error("always fails");
+          },
+        },
+      ],
+    };
+    // Dead-lettering emits OperationFailed mid-tick; that row must come back
+    // as due now, otherwise an idle dispatcher would never pick it up.
+    await createDispatcher({ pool, routes, maxAttempts: 1 }).tick();
+    await seed("StandbyTickRequested", {});
+
+    const at = await nextAttemptAt(pool);
+    expect(at).not.toBeNull();
+    expect(at!.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it("start() drains what is already queued, then stop() leaves no timer", async () => {
+    const seen: Message[] = [];
+    const routes: Routes = {
+      StandbyTickRequested: [
+        { consumer: "test", handle: async (m) => void seen.push(m) },
+      ],
+    };
+    await seed("StandbyTickRequested", {});
+
+    const d = createDispatcher({ pool, routes });
+    d.start();
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    d.stop();
+
+    const [row] = await rows();
+    expect(row.status).toBe("done");
   });
 });

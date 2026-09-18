@@ -37,9 +37,10 @@ race so you don't have to sit at your phone:
 - **Friday 21:00 (Israel time)** — the booking job fetches next week's schedule, finds your preferred
   classes by series ID (in priority order), and books up to **2 lessons**. If a class is already
   full, it joins the standby list and persists the entry to local state.
-- **Every 5 minutes** — the standby job polls open standby entries. When Arbox frees a slot (by
-  setting an `availability_id`), the bot immediately confirms the booking and emails you. Expired
-  entries are cleaned up.
+- **Every 10 minutes, but only while something is on a waitlist** — the standby job polls open
+  standby entries. When Arbox frees a slot (by setting an `availability_id`), the bot immediately
+  confirms the booking and emails you. Entries are retired once their class ends. With nothing on a
+  waitlist the job issues no queries at all, so a scale-to-zero database can suspend.
 - **Email at every step** via [Resend](https://resend.com) — a summary after each booking run, and
   individual alerts when a standby spot is confirmed, lost, or expires.
 - **One-click cancel links** — booking emails include an HMAC-signed `/cancel` URL so you can drop a
@@ -65,7 +66,8 @@ then secondary — booking up to **2 lessons** per week. For each candidate:
 
 When a booked user cancels, Arbox promotes the first person on standby by setting `availability_id`
 on the schedule item and sending a notification — the user then has **~30 minutes** to confirm. The
-standby job polls every 5 minutes; when it sees a non-null `availability_id` for a tracked entry it
+standby job polls every 10 minutes, leaving room for three attempts inside that window; when it
+sees a non-null `availability_id` for a tracked entry it
 calls `scheduleUser/insert` with that ID to confirm. If the ID has already expired, the error is
 logged and the entry is retried next cycle.
 
@@ -94,7 +96,7 @@ On start it logs the registered jobs and endpoints:
 
 ```
 Booking job:  every Friday at 21:00 Israel time (0 21 * * 5)
-Standby job:  every 5 minutes (*/5 * * * *)
+Standby job:  every 10 minutes while watching (*/10 * * * *)
 Endpoints:    POST /standby/run, GET /cancel?token=...
 HTTP server:  listening on port 3000
 ```
@@ -126,7 +128,7 @@ JSON file; the only outbound dependencies are the Arbox API and Resend.
 
 ```mermaid
 flowchart LR
-  Cron["node-cron<br/>Fri 21:00 · every 5 min"]
+  Cron["node-cron<br/>Fri 21:00 · every 10 min while watching"]
   HTTP["HTTP server :3000<br/>/cancel · /standby/run"]
   Sched["scheduler.ts"]
   Arbox["Arbox API v2"]
